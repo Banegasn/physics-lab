@@ -1,0 +1,153 @@
+<main class="lab-shell">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Kinetica home"
+      ><span class="brand-mark">K</span> kinetica</a
+    >
+    <p class="eyebrow">Interactive physics lab</p>
+    <div class="topbar-right"><span class="status-dot"></span> Live simulation</div>
+  </header>
+
+  <section class="workspace" aria-label="Physics simulation workspace">
+    <nav class="scenario-nav" aria-label="Choose a simulation">
+      @for (item of scenarios; track item.id) {
+        <button
+          type="button"
+          class="scenario-button"
+          [class.active]="selectedScenario() === item.id"
+          (click)="selectScenario(item.id)"
+        >
+          <span class="scenario-number">{{ item.number }}</span>
+          <span
+            ><strong>{{ item.name }}</strong
+            ><small>{{ item.description }}</small></span
+          >
+        </button>
+      }
+    </nav>
+
+    <section class="stage">
+      <div class="stage-heading">
+        <div>
+          <p class="eyebrow">Now running</p>
+          <h1>{{ scenario().name }}</h1>
+        </div>
+        <p class="instruction">
+          @if (isThreeDimensional()) {
+            Drag to orbit · scroll to zoom
+          } @else if (solverNote()) {
+            Monitor live solver diagnostics
+          } @else {
+            Dynamics rendered in real time
+          }
+        </p>
+      </div>
+      <canvas
+        #simCanvas
+        class="simulation"
+        [class.orbitable]="isThreeDimensional()"
+        aria-label="{{ scenario().name }} simulation"
+        (pointerdown)="startCameraDrag($event)"
+        (pointermove)="moveCamera($event)"
+        (pointerup)="endCameraDrag($event)"
+        (pointercancel)="endCameraDrag($event)"
+        (wheel)="zoomCamera($event)"
+      ></canvas>
+      <div class="stage-meta">
+        <span>{{ fps() }} fps</span>
+        @if (solverNote()) {
+          <span>{{ metric() }}</span>
+        } @else {
+          <span>Canvas engine</span>
+        }
+      </div>
+      <button
+        type="button"
+        class="play-control"
+        (click)="toggleRunning()"
+        [attr.aria-label]="running() ? 'Pause simulation' : 'Play simulation'"
+      >
+        <span>{{ running() ? 'Ⅱ' : '▶' }}</span
+        >{{ running() ? 'Pause' : 'Resume' }}
+      </button>
+    </section>
+
+    <aside class="control-rail" aria-label="Simulation controls">
+      <div class="control-head">
+        <p class="eyebrow">Controls</p>
+        <button type="button" class="reset" (click)="resetSimulation()">Reset</button>
+      </div>
+      <div class="control-list">
+        @for (control of activeControls(); track control.key) {
+          <label class="control"
+            ><span
+              ><span>{{ control.label }}</span
+              ><output>{{ formattedControl(control) }}</output></span
+            >
+            <input
+              type="range"
+              [min]="control.min"
+              [max]="control.max"
+              [step]="control.step"
+              [value]="controlValue(control.key)"
+              (input)="updateControl(control.key, $event)"
+          /></label>
+        }
+      </div>
+      <div class="speed-control">
+        <span class="eyebrow">Simulation speed</span>
+        <div class="speed-options">
+          @for (value of [0.5, 1, 2]; track value) {
+            <button type="button" [class.active]="speed() === value" (click)="setSpeed(value)">
+              {{ value }}×
+            </button>
+          }
+        </div>
+      </div>
+      @if (solverNote(); as solver) {
+        <div class="solver-note">
+          <span class="eyebrow">Numerical model</span>
+          <strong>{{ solver.equation }}</strong>
+          <small>{{ solver.detail }}</small>
+        </div>
+      }
+    </aside>
+  </section>
+
+  <section class="model-guide" aria-labelledby="model-guide-title">
+    <div class="guide-heading">
+      <div>
+        <p class="eyebrow">Model guide · {{ scenario().number }}</p>
+        <h2 id="model-guide-title">Understanding {{ scenario().name }}</h2>
+      </div>
+      <p>Assumptions, controls and numerical validity</p>
+    </div>
+    <div class="guide-grid">
+      <article class="guide-overview">
+        <h3>What is being simulated</h3>
+        <p>{{ guide().overview }}</p>
+        <h3>Numerical method</h3>
+        <p>{{ guide().method }}</p>
+      </article>
+      <article class="guide-parameters">
+        <h3>Parameter glossary</h3>
+        <dl>
+          @for (parameter of guide().parameters; track parameter.name) {
+            <div>
+              <dt>{{ parameter.name }}</dt>
+              <dd>{{ parameter.meaning }}</dd>
+            </div>
+          }
+        </dl>
+      </article>
+      <article class="guide-validity">
+        <h3>Scope and limitations</h3>
+        <p>{{ guide().limitation }}</p>
+        <a [href]="guide().reference.url" target="_blank" rel="noreferrer">
+          Read model reference <span aria-hidden="true">↗</span>
+        </a>
+      </article>
+    </div>
+  </section>
+
+  <footer><span>Built to explore</span><span>Drag a control, observe the system.</span></footer>
+</main>
