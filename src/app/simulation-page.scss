@@ -185,6 +185,27 @@
 .simulation.orbitable:active {
   cursor: grabbing;
 }
+.simulation.stage-surface-hidden {
+  display: none;
+}
+.wind-tunnel-host {
+  width: 100%;
+  flex: 1;
+  min-height: 485px;
+  display: none;
+  overflow: hidden;
+  border: 1px solid rgba(229, 236, 255, 0.09);
+  border-radius: 16px;
+  background: #080b18;
+  touch-action: none;
+  cursor: grab;
+}
+.wind-tunnel-host.active {
+  display: block;
+}
+.wind-tunnel-host:active {
+  cursor: grabbing;
+}
 .stage-meta {
   position: absolute;
   left: 46px;
@@ -272,6 +293,74 @@ input[type='range']::-webkit-slider-thumb {
   background: #e9fff8;
   border: 2px solid var(--mint);
   box-shadow: 0 0 0 3px rgba(111, 231, 195, 0.12);
+}
+.control-options {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 5px;
+}
+.control-options button {
+  min-width: 0;
+  padding: 7px 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.control-options button:hover {
+  color: var(--white);
+  border-color: rgba(111, 231, 195, 0.45);
+}
+.control-options button.active {
+  color: var(--ink);
+  border-color: var(--mint);
+  background: var(--mint);
+}
+.model-upload {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.model-upload input {
+  display: none;
+}
+.model-upload button,
+.model-upload strong,
+.model-upload small {
+  display: block;
+  width: 100%;
+}
+.model-upload button {
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(111, 231, 195, 0.38);
+  border-radius: 8px;
+  background: rgba(111, 231, 195, 0.08);
+  color: var(--mint);
+  font-size: 11px;
+  cursor: pointer;
+}
+.model-upload button:hover {
+  border-color: var(--mint);
+  background: rgba(111, 231, 195, 0.13);
+}
+.model-upload strong {
+  margin-top: 10px;
+  overflow: hidden;
+  color: #d9e0ea;
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-upload small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
 }
 .speed-control {
   margin-top: 42px;
@@ -491,6 +580,9 @@ footer {
     padding: 8px 0;
   }
   .simulation {
+    min-height: 430px;
+  }
+  .wind-tunnel-host {
     min-height: 430px;
   }
   .instruction {

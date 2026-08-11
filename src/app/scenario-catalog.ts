@@ -16,6 +16,7 @@ export const SCENARIO_IDS = [
   'springChain',
   'duffing',
   'fluid',
+  'windTunnel3d',
 ] as const;
 
 export type Scenario = (typeof SCENARIO_IDS)[number];
@@ -267,6 +268,20 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
       'Observe flow separation and the alternating von Kármán vortex street behind a bluff body.',
       'Relate Reynolds number and obstacle geometry to wake structure and shedding frequency.',
       'Compare vorticity, velocity and pressure views while monitoring drag, lift and Strouhal number.',
+    ],
+  },
+  {
+    id: 'windTunnel3d',
+    slug: 'wind-tunnel-3d',
+    number: '18 · 3D',
+    name: '3D wind tunnel',
+    description: 'D3Q19 flow around built-in or imported solid geometry.',
+    seoDescription:
+      'Explore low-Mach three-dimensional D3Q19 lattice Boltzmann flow around spheres, cubes, airfoils or locally imported GLB, GLTF, OBJ and STL meshes.',
+    uses: [
+      'Compare how bluff and streamlined geometries alter a resolved three-dimensional wake.',
+      'Study Reynolds number, angle of attack, blockage and lattice-resolution effects.',
+      'Import a local mesh, voxelize its surface and inspect qualitative flow around its shape.',
     ],
   },
 ];

@@ -44,6 +44,7 @@
       <canvas
         #simCanvas
         class="simulation"
+        [class.stage-surface-hidden]="selectedScenario() === 'windTunnel3d'"
         [class.orbitable]="isThreeDimensional()"
         aria-label="{{ scenario().name }} simulation"
         (pointerdown)="startCameraDrag($event)"
@@ -52,6 +53,13 @@
         (pointercancel)="endCameraDrag($event)"
         (wheel)="zoomCamera($event)"
       ></canvas>
+      <div
+        #windTunnelHost
+        class="wind-tunnel-host"
+        [class.active]="selectedScenario() === 'windTunnel3d'"
+        role="img"
+        aria-label="Interactive three-dimensional wind tunnel"
+      ></div>
       <div class="stage-meta">
         <span>{{ fps() }} fps</span>
         @if (solverNote()) {
@@ -78,21 +86,51 @@
       </div>
       <div class="control-list">
         @for (control of activeControls(); track control.key) {
-          <label class="control"
-            ><span
+          <div class="control">
+            <span
               ><span>{{ control.label }}</span
               ><output>{{ formattedControl(control) }}</output></span
             >
-            <input
-              type="range"
-              [min]="control.min"
-              [max]="control.max"
-              [step]="control.step"
-              [value]="controlValue(control.key)"
-              (input)="updateControl(control.key, $event)"
-          /></label>
+            @if (control.options; as options) {
+              <div class="control-options" role="group" [attr.aria-label]="control.label">
+                @for (option of options; track option.value) {
+                  <button
+                    type="button"
+                    [class.active]="controlValue(control.key) === option.value"
+                    (click)="setControlValue(control.key, option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                }
+              </div>
+            } @else {
+              <input
+                type="range"
+                [attr.aria-label]="control.label"
+                [min]="control.min"
+                [max]="control.max"
+                [step]="control.step"
+                [value]="controlValue(control.key)"
+                (input)="updateControl(control.key, $event)"
+              />
+            }
+          </div>
         }
       </div>
+      @if (selectedScenario() === 'windTunnel3d') {
+        <div class="model-upload">
+          <span class="eyebrow">Custom geometry</span>
+          <input
+            #modelInput
+            type="file"
+            accept=".glb,.gltf,.obj,.stl,model/gltf-binary,model/gltf+json"
+            (change)="loadWindModel($event)"
+          />
+          <button type="button" (click)="modelInput.click()">Load 3D model</button>
+          <strong>{{ uploadedModelName() }}</strong>
+          <small>{{ modelLoadStatus() }}</small>
+        </div>
+      }
       <div class="speed-control">
         <span class="eyebrow">Simulation speed</span>
         <div class="speed-options">

@@ -2,7 +2,7 @@
 
 An interactive browser-based laboratory for exploring classical mechanics, nonlinear dynamics, field physics, spatial epidemics, waves, and quantum mechanics.
 
-Physics Lab currently includes 17 parameterized simulations:
+Physics Lab currently includes 18 parameterized simulations:
 
 - Kepler two-body motion and power-law central forces
 - Lorentz fields and three-dimensional magnetic helices
@@ -13,6 +13,7 @@ Physics Lab currently includes 17 parameterized simulations:
 - Quantum tunneling via the time-dependent Schrödinger equation
 - The three-dimensional Lorenz attractor
 - A D2Q9 wind tunnel with bluff-body vortex shedding and aerodynamic diagnostics
+- A D3Q19 wind tunnel for built-in and locally imported three-dimensional meshes
 
 Each laboratory includes interactive controls, live measurements, and a model guide documenting its equations, parameters, numerical method, limitations, and scientific reference.
 
@@ -51,7 +52,7 @@ The `main` branch deploys automatically through the included GitHub Actions work
 npm run build:pages
 ```
 
-Angular prerenders the root and all 17 simulation routes into `dist/physics-lab/browser`. The Pages build uses `/physics-lab/` as its base path and includes a client-side fallback for unknown URLs.
+Angular prerenders the root and all 18 simulation routes into `dist/physics-lab/browser`. The Pages build uses `/physics-lab/` as its base path and includes a client-side fallback for unknown URLs.
 
 ## Scientific scope
 

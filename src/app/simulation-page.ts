@@ -44,6 +44,7 @@ import {
   type PhaseBody3D,
 } from './physics';
 import { D2Q9Fluid, type FluidDiagnostics, type FluidObstacleShape } from './fluid';
+import type { WindTunnel3D } from './wind-tunnel-3d';
 import {
   DEFAULT_SCENARIO,
   SCENARIOS,
@@ -60,6 +61,7 @@ type ControlKey =
   | 'electricField'
   | 'chargeMassRatio'
   | 'thermalSpeed'
+  | 'fieldCollisions'
   | 'fieldCollisionRate'
   | 'fieldStep'
   | 'pendulums'
@@ -118,6 +120,7 @@ type ControlKey =
   | 'magnetic3dField'
   | 'magnetic3dElectric'
   | 'magnetic3dPitch'
+  | 'magnetic3dCollisions'
   | 'magnetic3dCollisionRate'
   | 'magnetic3dStep'
   | 'springCount'
@@ -136,7 +139,14 @@ type ControlKey =
   | 'fluidInflow'
   | 'fluidRadius'
   | 'fluidObstacle'
-  | 'fluidView';
+  | 'fluidView'
+  | 'wind3dReynolds'
+  | 'wind3dInflow'
+  | 'wind3dObstacle'
+  | 'wind3dAngle'
+  | 'wind3dResolution'
+  | 'wind3dView'
+  | 'wind3dParticles';
 
 interface Control {
   key: ControlKey;
@@ -145,6 +155,7 @@ interface Control {
   max: number;
   step: number;
   unit: string;
+  options?: readonly { value: number; label: string }[];
 }
 interface Particle extends PhaseBody {
   hue: number;
@@ -256,7 +267,10 @@ const MODEL_GUIDES: Record<Scenario, ModelGuide> = {
         meaning:
           'Boris-pusher timestep. Resolve the gyroperiod with many steps for accurate phase.',
       },
-      { name: 'ν', meaning: 'Mean elastic collision frequency; ν = 0 disables collisions.' },
+      {
+        name: 'Collisions / ν',
+        meaning: 'Toggle for the binary-scattering operator and its mean elastic collision rate.',
+      },
     ],
     method:
       'The Boris split rotates velocity under B between two electric half-kicks. Optional equal-mass Monte Carlo pairs scatter isotropically in their center-of-mass frame, exactly conserving pair momentum and kinetic energy.',
@@ -549,7 +563,10 @@ const MODEL_GUIDES: Record<Scenario, ModelGuide> = {
         name: 'α',
         meaning: 'Initial pitch angle between velocity and B; when Bz = 0 it is measured from +z.',
       },
-      { name: 'ν', meaning: 'Mean elastic collision frequency; ν = 0 disables collisions.' },
+      {
+        name: 'Collisions / ν',
+        meaning: 'Toggle for the binary-scattering operator and its mean elastic collision rate.',
+      },
       { name: 'Δt', meaning: 'Boris-pusher timestep.' },
     ],
     method:
@@ -636,6 +653,49 @@ const MODEL_GUIDES: Record<Scenario, ModelGuide> = {
       url: 'https://doi.org/10.1209/0295-5075/17/6/001',
     },
   },
+  windTunnel3d: {
+    overview:
+      'A weakly compressible, three-dimensional flow passes a voxelized solid inside a rectangular tunnel. Momentum exchange at the no-slip boundary produces a resolved wake and approximate aerodynamic force coefficients.',
+    parameters: [
+      {
+        name: 'Re',
+        meaning:
+          'Reynolds number Re = UL/ν using inflow speed U and the obstacle characteristic length L.',
+      },
+      { name: 'U', meaning: 'Uniform inlet speed in lattice cells per timestep.' },
+      {
+        name: 'Object',
+        meaning: 'Sphere, cube, symmetric NACA 0012 airfoil or a locally imported triangular mesh.',
+      },
+      {
+        name: 'α',
+        meaning:
+          'Angle of attack about the tunnel z axis; positive rotation raises the leading edge.',
+      },
+      {
+        name: 'Grid',
+        meaning:
+          'D3Q19 lattice resolution. More cells improve surface representation but increase memory and runtime.',
+      },
+      {
+        name: 'View',
+        meaning: 'Tracer color encodes no scalar, local speed magnitude or vorticity magnitude.',
+      },
+      {
+        name: 'Cd / Cl',
+        meaning:
+          'Drag and lift coefficients from bounce-back momentum exchange and the voxelized projected area.',
+      },
+    ],
+    method:
+      'A Web Worker advances a D3Q19 single-relaxation-time lattice Boltzmann scheme. Halfway bounce-back imposes no slip on the tunnel and object voxels; an equilibrium inlet and copied zero-gradient outlet drive the flow. Imported GLB, self-contained GLTF, OBJ and STL triangles are centered, scaled, surface-voxelized and flood-filled before solving. Three.js renders the solid and passive point tracers without changing the fluid state.',
+    limitation:
+      'This is low-resolution educational CFD. Coarse stair-step geometry, BGK collision, simple open boundaries, finite blockage and short averaging windows limit quantitative Cd and Cl accuracy. Imported meshes should be closed and manifold; thin features below roughly one lattice cell disappear. Validate important results with mesh refinement, a larger domain and experimental or engineering-grade CFD data.',
+    reference: {
+      label: 'Qian, d’Humières & Lallemand — Lattice BGK models',
+      url: 'https://doi.org/10.1209/0295-5075/17/6/001',
+    },
+  },
 };
 
 @Component({
@@ -652,6 +712,8 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   private readonly meta = inject(Meta);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   protected readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('simCanvas');
+  protected readonly windTunnelHost =
+    viewChild.required<ElementRef<HTMLDivElement>>('windTunnelHost');
   protected readonly selectedScenario = signal<Scenario>(DEFAULT_SCENARIO.id);
   protected readonly running = signal(true);
   protected readonly speed = signal(1);
@@ -659,8 +721,10 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   protected readonly fps = signal(60);
   protected readonly metric = signal('t = 0.000');
   protected readonly isThreeDimensional = computed(() =>
-    ['lorenz3d', 'gravity3d', 'magnetic3d'].includes(this.selectedScenario()),
+    ['lorenz3d', 'gravity3d', 'magnetic3d', 'windTunnel3d'].includes(this.selectedScenario()),
   );
+  protected readonly uploadedModelName = signal('No custom model loaded');
+  protected readonly modelLoadStatus = signal('GLB, GLTF, OBJ or STL · local only');
   protected readonly controls = signal<Record<ControlKey, number>>({
     orbitalEccentricity: 0.35,
     orbitalMassRatio: 0.08,
@@ -670,7 +734,8 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     electricField: 0,
     chargeMassRatio: 1,
     thermalSpeed: 0.7,
-    fieldCollisionRate: 0,
+    fieldCollisions: 0,
+    fieldCollisionRate: 0.35,
     fieldStep: 0.006,
     pendulums: 11,
     spread: 0.55,
@@ -728,7 +793,8 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     magnetic3dField: 1.4,
     magnetic3dElectric: 0,
     magnetic3dPitch: 42,
-    magnetic3dCollisionRate: 0,
+    magnetic3dCollisions: 0,
+    magnetic3dCollisionRate: 0.35,
     magnetic3dStep: 0.008,
     springCount: 18,
     springConstant: 1,
@@ -747,6 +813,13 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     fluidRadius: 11,
     fluidObstacle: 0,
     fluidView: 0,
+    wind3dReynolds: 60,
+    wind3dInflow: 0.05,
+    wind3dObstacle: 0,
+    wind3dAngle: 0,
+    wind3dResolution: 1,
+    wind3dView: 1,
+    wind3dParticles: 1200,
   });
   protected readonly scenarios = SCENARIOS;
   protected readonly scenario = computed(() =>
@@ -789,13 +862,29 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
         { key: 'chargeMassRatio', label: 'Charge / mass', min: -2, max: 2, step: 0.1, unit: 'q/m' },
         { key: 'thermalSpeed', label: 'Initial speed σ', min: 0.1, max: 1.4, step: 0.05, unit: '' },
         {
-          key: 'fieldCollisionRate',
-          label: 'Collision rate ν',
+          key: 'fieldCollisions',
+          label: 'Elastic collisions',
           min: 0,
-          max: 2,
-          step: 0.05,
-          unit: 't⁻¹',
+          max: 1,
+          step: 1,
+          unit: '',
+          options: [
+            { value: 0, label: 'Off' },
+            { value: 1, label: 'On' },
+          ],
         },
+        ...(this.controls().fieldCollisions === 1
+          ? [
+              {
+                key: 'fieldCollisionRate' as const,
+                label: 'Collision rate ν',
+                min: 0.05,
+                max: 2,
+                step: 0.05,
+                unit: 't⁻¹',
+              },
+            ]
+          : []),
         { key: 'fieldStep', label: 'Boris Δt', min: 0.002, max: 0.02, step: 0.001, unit: '' },
       ];
     if (this.selectedScenario() === 'pendulum')
@@ -1015,13 +1104,29 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
         },
         { key: 'magnetic3dPitch', label: 'Pitch angle α', min: 0, max: 90, step: 1, unit: '°' },
         {
-          key: 'magnetic3dCollisionRate',
-          label: 'Collision rate ν',
+          key: 'magnetic3dCollisions',
+          label: 'Elastic collisions',
           min: 0,
-          max: 2,
-          step: 0.05,
-          unit: 't⁻¹',
+          max: 1,
+          step: 1,
+          unit: '',
+          options: [
+            { value: 0, label: 'Off' },
+            { value: 1, label: 'On' },
+          ],
         },
+        ...(this.controls().magnetic3dCollisions === 1
+          ? [
+              {
+                key: 'magnetic3dCollisionRate' as const,
+                label: 'Collision rate ν',
+                min: 0.05,
+                max: 2,
+                step: 0.05,
+                unit: 't⁻¹',
+              },
+            ]
+          : []),
         { key: 'magnetic3dStep', label: 'Boris Δt', min: 0.002, max: 0.02, step: 0.001, unit: '' },
       ];
     if (this.selectedScenario() === 'springChain')
@@ -1059,9 +1164,109 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
           unit: 'lu/ts',
         },
         { key: 'fluidRadius', label: 'Obstacle radius', min: 10, max: 16, step: 1, unit: 'cells' },
-        { key: 'fluidObstacle', label: 'Obstacle shape', min: 0, max: 1, step: 1, unit: '' },
-        { key: 'fluidView', label: 'Field view', min: 0, max: 2, step: 1, unit: '' },
+        {
+          key: 'fluidObstacle',
+          label: 'Obstacle shape',
+          min: 0,
+          max: 1,
+          step: 1,
+          unit: '',
+          options: [
+            { value: 0, label: 'Cylinder' },
+            { value: 1, label: 'Square' },
+          ],
+        },
+        {
+          key: 'fluidView',
+          label: 'Field view',
+          min: 0,
+          max: 2,
+          step: 1,
+          unit: '',
+          options: [
+            { value: 0, label: 'Vorticity' },
+            { value: 1, label: 'Speed' },
+            { value: 2, label: 'Pressure' },
+          ],
+        },
       ];
+    if (this.selectedScenario() === 'windTunnel3d') {
+      const obstacleOptions = [
+        { value: 0, label: 'Sphere' },
+        { value: 1, label: 'Cube' },
+        { value: 2, label: 'NACA 0012' },
+        ...(this.uploadedModelName() === 'No custom model loaded'
+          ? []
+          : [{ value: 3, label: 'Imported' }]),
+      ];
+      return [
+        {
+          key: 'wind3dReynolds',
+          label: 'Reynolds number Re',
+          min: 20,
+          max: 100,
+          step: 5,
+          unit: '',
+        },
+        {
+          key: 'wind3dInflow',
+          label: 'Inflow velocity U',
+          min: 0.035,
+          max: 0.06,
+          step: 0.005,
+          unit: 'lu/ts',
+        },
+        {
+          key: 'wind3dObstacle',
+          label: 'Tunnel object',
+          min: 0,
+          max: 3,
+          step: 1,
+          unit: '',
+          options: obstacleOptions,
+        },
+        { key: 'wind3dAngle', label: 'Angle of attack α', min: -20, max: 20, step: 1, unit: '°' },
+        {
+          key: 'wind3dResolution',
+          label: 'Solver grid',
+          min: 0,
+          max: 2,
+          step: 1,
+          unit: '',
+          options: [
+            { value: 0, label: '42×24×24' },
+            { value: 1, label: '54×30×30' },
+            { value: 2, label: '66×36×36' },
+          ],
+        },
+        {
+          key: 'wind3dView',
+          label: 'Tracer color',
+          min: 0,
+          max: 2,
+          step: 1,
+          unit: '',
+          options: [
+            { value: 0, label: 'Uniform' },
+            { value: 1, label: 'Speed' },
+            { value: 2, label: 'Vorticity' },
+          ],
+        },
+        {
+          key: 'wind3dParticles',
+          label: 'Tracer density',
+          min: 600,
+          max: 2200,
+          step: 600,
+          unit: '',
+          options: [
+            { value: 600, label: 'Low' },
+            { value: 1200, label: 'Medium' },
+            { value: 2200, label: 'High' },
+          ],
+        },
+      ];
+    }
     if (this.selectedScenario() === 'duffing')
       return [
         {
@@ -1194,6 +1399,11 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
         equation: 'fᵢ(x+cᵢ,t+1) = fᵢ − (fᵢ−fᵢᵉᵠ)/τ',
         detail: 'D2Q9 lattice BGK · bounce-back body · Re = UD/ν · low-Mach flow',
       };
+    if (this.selectedScenario() === 'windTunnel3d')
+      return {
+        equation: 'fᵢ(x+cᵢ,t+1) = fᵢ − (fᵢ−fᵢᵉᵠ)/τ',
+        detail: 'D3Q19 lattice BGK · voxel bounce-back · Re = UL/ν · Web Worker',
+      };
     if (this.selectedScenario() === 'duffing')
       return {
         equation: 'ẍ + δẋ + αx + βx³ = F cos(Ωt)',
@@ -1277,6 +1487,9 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   private cameraPointer: number | null = null;
   private cameraLastX = 0;
   private cameraLastY = 0;
+  private windTunnel3D: WindTunnel3D | null = null;
+  private windTunnelLoading: Promise<WindTunnel3D> | null = null;
+  private viewInitialized = false;
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((parameters) => {
@@ -1293,6 +1506,7 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     if (!this.isBrowser) return;
+    this.viewInitialized = true;
     this.context = this.canvas().nativeElement.getContext('2d');
     this.rasterCanvas = document.createElement('canvas');
     this.rasterCanvas.width = this.fieldWidth;
@@ -1307,6 +1521,7 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     if (!this.isBrowser) return;
     window.removeEventListener('resize', this.resizeCanvas);
     cancelAnimationFrame(this.animationFrame);
+    this.windTunnel3D?.dispose();
   }
 
   protected toggleRunning(): void {
@@ -1314,6 +1529,29 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   }
   protected setSpeed(speed: number): void {
     this.speed.set(speed);
+  }
+  protected async loadWindModel(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.modelLoadStatus.set('Voxelizing model…');
+    try {
+      this.ensureWindTunnel3D();
+      const tunnel = this.windTunnel3D ?? (await this.windTunnelLoading);
+      if (!tunnel) throw new Error('WebGL is not available.');
+      const model = await tunnel.loadModel(file);
+      this.uploadedModelName.set(
+        `${model.name} · ${model.triangleCount.toLocaleString()} triangles`,
+      );
+      this.modelLoadStatus.set('Ready · processed locally in this browser');
+      this.setControlValue('wind3dObstacle', 3);
+    } catch (error) {
+      this.modelLoadStatus.set(
+        error instanceof Error ? error.message : 'The model could not be loaded.',
+      );
+    } finally {
+      input.value = '';
+    }
   }
   private updateSeo(scenario: ScenarioDefinition): void {
     const pageTitle = `${scenario.name} Simulator | Kinetica Physics Lab`;
@@ -1398,6 +1636,9 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   }
   protected updateControl(key: ControlKey, event: Event): void {
     const value = Number((event.target as HTMLInputElement).value);
+    this.setControlValue(key, value);
+  }
+  protected setControlValue(key: ControlKey, value: number): void {
     this.controls.update((controls) => ({
       ...controls,
       [key]: value,
@@ -1474,6 +1715,11 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
         'fluidInflow',
         'fluidRadius',
         'fluidObstacle',
+        'wind3dReynolds',
+        'wind3dInflow',
+        'wind3dObstacle',
+        'wind3dAngle',
+        'wind3dResolution',
       ].includes(key)
     )
       this.resetSimulation();
@@ -1483,9 +1729,8 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   }
   protected formattedControl(control: Control): string {
     const value = this.controlValue(control.key);
-    if (control.key === 'fluidObstacle') return value === 0 ? 'Cylinder' : 'Square';
-    if (control.key === 'fluidView')
-      return ['Vorticity', 'Speed', 'Pressure'][Math.round(value)] ?? 'Vorticity';
+    const selectedOption = control.options?.find((option) => option.value === value);
+    if (selectedOption) return selectedOption.label;
     const decimalPlaces = Math.min(4, Math.max(0, Math.ceil(-Math.log10(control.step))));
     const cleanValue = value.toFixed(decimalPlaces);
     return `${cleanValue}${control.unit ? ` ${control.unit}` : ''}`;
@@ -1516,6 +1761,10 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     this.wavePrevious.fill(0);
     this.waveNext.fill(0);
     this.initializeFluid();
+    if (this.selectedScenario() === 'windTunnel3d' && this.viewInitialized) {
+      const tunnel = this.ensureWindTunnel3D();
+      if (tunnel) this.configureWindTunnel3D(tunnel);
+    }
     this.initializeQuantumState();
     if (this.selectedScenario() === 'orbit')
       this.initialInvariant = nBodyEnergy(this.orbitBodies, 1, 0);
@@ -1565,15 +1814,51 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   }
   private readonly resizeCanvas = (): void => {
     const canvas = this.canvas().nativeElement;
-    const rect = canvas.getBoundingClientRect();
+    const rect =
+      this.selectedScenario() === 'windTunnel3d'
+        ? this.windTunnelHost().nativeElement.getBoundingClientRect()
+        : canvas.getBoundingClientRect();
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     this.width = rect.width;
     this.height = rect.height;
     canvas.width = Math.round(rect.width * ratio);
     canvas.height = Math.round(rect.height * ratio);
     this.context?.setTransform(ratio, 0, 0, ratio, 0, 0);
+    this.windTunnel3D?.resize(rect.width, rect.height);
     this.resetSimulation();
   };
+
+  private ensureWindTunnel3D(): WindTunnel3D | null {
+    if (!this.isBrowser || !this.viewInitialized) return null;
+    if (!this.windTunnel3D && !this.windTunnelLoading) {
+      this.windTunnelLoading = import('./wind-tunnel-3d').then(({ WindTunnel3D }) => {
+        const tunnel = new WindTunnel3D(this.windTunnelHost().nativeElement, (metric) =>
+          this.metric.set(metric),
+        );
+        this.windTunnel3D = tunnel;
+        const rect = this.windTunnelHost().nativeElement.getBoundingClientRect();
+        tunnel.resize(rect.width, rect.height);
+        if (this.selectedScenario() === 'windTunnel3d') this.configureWindTunnel3D(tunnel);
+        return tunnel;
+      });
+    }
+    return this.windTunnel3D;
+  }
+
+  private configureWindTunnel3D(tunnel: WindTunnel3D): void {
+    const { wind3dReynolds, wind3dInflow, wind3dObstacle, wind3dAngle, wind3dResolution } =
+      this.controls();
+    tunnel.configure({
+      reynolds: wind3dReynolds,
+      inflowVelocity: wind3dInflow,
+      obstacle:
+        Math.round(wind3dObstacle) === 3 && !tunnel.hasCustomModel()
+          ? 0
+          : Math.round(wind3dObstacle),
+      angleDegrees: wind3dAngle,
+      resolution: Math.round(wind3dResolution),
+    });
+  }
   private createOrbitBodies(): ScientificBody[] {
     const massRatio = this.controls().orbitalMassRatio;
     const totalMass = 1 + massRatio;
@@ -1897,6 +2182,7 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   }
 
   private applyFieldCollisions(timeStep: number): void {
+    if (this.controls().fieldCollisions === 0) return;
     const collisionRate = this.controls().fieldCollisionRate;
     const tick = this.fieldCollisionTick++;
     if (collisionRate <= 0 || this.particles.length < 2) return;
@@ -1914,6 +2200,7 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   }
 
   private applyMagneticCollisions(timeStep: number): void {
+    if (this.controls().magnetic3dCollisions === 0) return;
     const collisionRate = this.controls().magnetic3dCollisionRate;
     const tick = this.magneticCollisionTick++;
     if (collisionRate <= 0 || this.magneticParticles3D.length < 2) return;
@@ -2098,6 +2385,18 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     if (this.selectedScenario() === 'springChain') this.drawSpringChain(context, delta);
     if (this.selectedScenario() === 'duffing') this.drawDuffing(context, delta);
     if (this.selectedScenario() === 'fluid') this.drawFluid(context, delta);
+    if (this.selectedScenario() === 'windTunnel3d') this.drawWindTunnel3D(delta);
+  }
+
+  private drawWindTunnel3D(delta: number): void {
+    const tunnel = this.ensureWindTunnel3D();
+    if (!tunnel) return;
+    tunnel.frame(
+      delta,
+      this.running(),
+      this.controls().wind3dView,
+      Math.round(this.controls().wind3dParticles),
+    );
   }
   private drawAtmosphere(context: CanvasRenderingContext2D): void {
     const gradient = context.createRadialGradient(

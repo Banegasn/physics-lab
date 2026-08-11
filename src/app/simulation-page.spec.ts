@@ -47,4 +47,36 @@ describe('SimulationPage', () => {
       'Orbital eccentricity',
     );
   });
+
+  it('uses segmented buttons for categorical parameters', () => {
+    const fixture = TestBed.createComponent(SimulationPage);
+    const component = fixture.componentInstance as unknown as {
+      selectedScenario: { set: (scenario: string) => void };
+    };
+    component.selectedScenario.set('fluid');
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelectorAll('.control-options')).toHaveLength(2);
+    expect(compiled.querySelectorAll('.control-options button')).toHaveLength(5);
+  });
+
+  it('reveals a continuous collision-rate slider only when collisions are enabled', () => {
+    const fixture = TestBed.createComponent(SimulationPage);
+    const component = fixture.componentInstance as unknown as {
+      selectedScenario: { set: (scenario: string) => void };
+    };
+    component.selectedScenario.set('field');
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.textContent).not.toContain('Collision rate ν');
+    const collisionButtons = [
+      ...compiled.querySelectorAll<HTMLButtonElement>('.control-options button'),
+    ];
+    collisionButtons.find((button) => button.textContent?.trim() === 'On')?.click();
+    fixture.detectChanges();
+
+    expect(compiled.textContent).toContain('Collision rate ν');
+  });
 });
