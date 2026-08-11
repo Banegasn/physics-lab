@@ -1,6 +1,6 @@
 <main class="lab-shell">
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Kinetica home"
+    <a class="brand" [routerLink]="['/simulations', scenarios[0].slug]" aria-label="Kinetica home"
       ><span class="brand-mark">K</span> kinetica</a
     >
     <p class="eyebrow">Interactive physics lab</p>
@@ -10,18 +10,18 @@
   <section class="workspace" aria-label="Physics simulation workspace">
     <nav class="scenario-nav" aria-label="Choose a simulation">
       @for (item of scenarios; track item.id) {
-        <button
-          type="button"
+        <a
           class="scenario-button"
           [class.active]="selectedScenario() === item.id"
-          (click)="selectScenario(item.id)"
+          [routerLink]="['/simulations', item.slug]"
+          [attr.aria-current]="selectedScenario() === item.id ? 'page' : null"
         >
           <span class="scenario-number">{{ item.number }}</span>
           <span
             ><strong>{{ item.name }}</strong
             ><small>{{ item.description }}</small></span
           >
-        </button>
+        </a>
       }
     </nav>
 
@@ -96,7 +96,7 @@
       <div class="speed-control">
         <span class="eyebrow">Simulation speed</span>
         <div class="speed-options">
-          @for (value of [0.5, 1, 2]; track value) {
+          @for (value of speedOptions; track value) {
             <button type="button" [class.active]="speed() === value" (click)="setSpeed(value)">
               {{ value }}×
             </button>
@@ -125,6 +125,12 @@
       <article class="guide-overview">
         <h3>What is being simulated</h3>
         <p>{{ guide().overview }}</p>
+        <h3>What this simulator is useful for</h3>
+        <ul class="guide-uses">
+          @for (use of scenario().uses; track use) {
+            <li>{{ use }}</li>
+          }
+        </ul>
         <h3>Numerical method</h3>
         <p>{{ guide().method }}</p>
       </article>
@@ -142,7 +148,7 @@
       <article class="guide-validity">
         <h3>Scope and limitations</h3>
         <p>{{ guide().limitation }}</p>
-        <a [href]="guide().reference.url" target="_blank" rel="noreferrer">
+        <a [href]="guide().reference.url" target="_blank" rel="noopener noreferrer">
           Read model reference <span aria-hidden="true">↗</span>
         </a>
       </article>

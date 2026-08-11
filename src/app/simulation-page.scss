@@ -108,6 +108,7 @@
   grid-template-columns: 27px 1fr;
   gap: 10px;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
   border-radius: 10px;
   transition:
@@ -279,11 +280,11 @@ input[type='range']::-webkit-slider-thumb {
 }
 .speed-options {
   margin-top: 12px;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
 }
 .speed-options button {
-  flex: 1;
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--line);
@@ -370,8 +371,21 @@ input[type='range']::-webkit-slider-thumb {
   font-size: 12px;
   line-height: 1.7;
 }
-.guide-overview h3:nth-of-type(2) {
+.guide-overview h3:not(:first-child) {
   margin-top: 25px;
+}
+.guide-uses {
+  margin: 0;
+  padding-left: 17px;
+  color: #929dac;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.guide-uses li + li {
+  margin-top: 7px;
+}
+.guide-uses li::marker {
+  color: var(--mint);
 }
 .guide-parameters dl {
   margin: 0;

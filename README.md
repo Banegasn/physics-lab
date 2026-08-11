@@ -15,6 +15,8 @@ Physics Lab currently includes 16 parameterized simulations:
 
 Each laboratory includes interactive controls, live measurements, and a model guide documenting its equations, parameters, numerical method, limitations, and scientific reference.
 
+Every simulation also has a dedicated, statically generated route with its own title, description, canonical URL, structured data, usage guidance, sitemap entry, and share metadata.
+
 ## Tech stack
 
 - Angular 22 with standalone components, signals, and strict TypeScript
@@ -39,6 +41,16 @@ npm run lint
 npm test -- --watch=false
 npm run build
 ```
+
+## GitHub Pages
+
+The `main` branch deploys automatically through the included GitHub Actions workflow. To generate the complete Pages artifact locally:
+
+```bash
+npm run build:pages
+```
+
+Angular prerenders the root and all 16 simulation routes into `dist/physics-lab/browser`. The Pages build uses `/physics-lab/` as its base path and includes a client-side fallback for unknown URLs.
 
 ## Scientific scope
 
