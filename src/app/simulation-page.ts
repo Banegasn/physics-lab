@@ -43,6 +43,7 @@ import {
   type PhaseBody,
   type PhaseBody3D,
 } from './physics';
+import { D2Q9Fluid, type FluidDiagnostics, type FluidObstacleShape } from './fluid';
 import {
   DEFAULT_SCENARIO,
   SCENARIOS,
@@ -130,7 +131,12 @@ type ControlKey =
   | 'duffingDamping'
   | 'duffingDrive'
   | 'duffingFrequency'
-  | 'duffingStep';
+  | 'duffingStep'
+  | 'fluidReynolds'
+  | 'fluidInflow'
+  | 'fluidRadius'
+  | 'fluidObstacle'
+  | 'fluidView';
 
 interface Control {
   key: ControlKey;
@@ -182,6 +188,11 @@ interface ScalarHistoryPoint {
 interface DuffingPoint {
   position: number;
   velocity: number;
+}
+interface FluidTracer {
+  x: number;
+  y: number;
+  age: number;
 }
 interface ModelGuide {
   overview: string;
@@ -590,6 +601,41 @@ const MODEL_GUIDES: Record<Scenario, ModelGuide> = {
       url: 'https://doi.org/10.1103/PhysRevLett.116.044101',
     },
   },
+  fluid: {
+    overview:
+      'A weakly compressible, two-dimensional flow passes a fixed bluff body in a channel. Boundary-layer separation produces an alternating wake that can organize into a von Kármán vortex street.',
+    parameters: [
+      {
+        name: 'Re',
+        meaning:
+          'Reynolds number Re = UD/ν, comparing inertial and viscous transport using inflow speed U and body diameter D.',
+      },
+      { name: 'U', meaning: 'Uniform inlet velocity in lattice cells per timestep.' },
+      {
+        name: 'D',
+        meaning: 'Obstacle diameter in lattice cells; it sets the characteristic length scale.',
+      },
+      { name: 'Shape', meaning: 'Circular cylinder or square bluff-body boundary.' },
+      {
+        name: 'View',
+        meaning:
+          'Rendered macroscopic field: signed vorticity, speed magnitude or isothermal pressure proxy p = cₛ²ρ.',
+      },
+      {
+        name: 'τ',
+        meaning:
+          'Derived BGK relaxation time τ = 1/2 + 3ν in lattice units; values too close to 1/2 reduce numerical robustness.',
+      },
+    ],
+    method:
+      'A D2Q9 lattice Boltzmann BGK scheme streams nine particle populations and relaxes them toward the second-order equilibrium distribution. No-slip channel walls and the body use halfway bounce-back; the inlet is prescribed at equilibrium and the outlet uses a zero-gradient copy. A tiny one-time transverse wake perturbation breaks exact numerical symmetry, then evolves freely. Passive tracers follow the recovered velocity field. Drag and lift come from momentum exchange, while Strouhal number St = fD/U is estimated from successive positive lift crossings after the initial transient.',
+    limitation:
+      'This 176×88 lattice is an educational low-Mach, two-dimensional laminar model. Its single-relaxation BGK collision, simple inlet/outlet boundaries, finite domain and coarse obstacle resolution are not sufficient for engineering CFD, turbulent wakes or quantitative validation. Compare trends only after the startup transient and while τ remains safely above 0.5.',
+    reference: {
+      label: 'Qian, d’Humières & Lallemand — Lattice BGK models',
+      url: 'https://doi.org/10.1209/0295-5075/17/6/001',
+    },
+  },
 };
 
 @Component({
@@ -696,6 +742,11 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     duffingDrive: 0.3,
     duffingFrequency: 1.2,
     duffingStep: 0.005,
+    fluidReynolds: 150,
+    fluidInflow: 0.055,
+    fluidRadius: 11,
+    fluidObstacle: 0,
+    fluidView: 0,
   });
   protected readonly scenarios = SCENARIOS;
   protected readonly scenario = computed(() =>
@@ -996,6 +1047,21 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
         { key: 'springAmplitude', label: 'Amplitude A', min: 0.1, max: 1, step: 0.05, unit: '' },
         { key: 'springStep', label: 'Verlet Δt', min: 0.001, max: 0.02, step: 0.001, unit: '' },
       ];
+    if (this.selectedScenario() === 'fluid')
+      return [
+        { key: 'fluidReynolds', label: 'Reynolds number Re', min: 40, max: 200, step: 5, unit: '' },
+        {
+          key: 'fluidInflow',
+          label: 'Inflow velocity U',
+          min: 0.035,
+          max: 0.07,
+          step: 0.005,
+          unit: 'lu/ts',
+        },
+        { key: 'fluidRadius', label: 'Obstacle radius', min: 10, max: 16, step: 1, unit: 'cells' },
+        { key: 'fluidObstacle', label: 'Obstacle shape', min: 0, max: 1, step: 1, unit: '' },
+        { key: 'fluidView', label: 'Field view', min: 0, max: 2, step: 1, unit: '' },
+      ];
     if (this.selectedScenario() === 'duffing')
       return [
         {
@@ -1123,6 +1189,11 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
         equation: 'mẍᵢ = k(xᵢ₋₁ − 2xᵢ + xᵢ₊₁)',
         detail: 'Fixed-end Hooke chain · exact normal-mode initialization · Velocity Verlet',
       };
+    if (this.selectedScenario() === 'fluid')
+      return {
+        equation: 'fᵢ(x+cᵢ,t+1) = fᵢ − (fᵢ−fᵢᵉᵠ)/τ',
+        detail: 'D2Q9 lattice BGK · bounce-back body · Re = UD/ν · low-Mach flow',
+      };
     if (this.selectedScenario() === 'duffing')
       return {
         equation: 'ẍ + δẋ + αx + βx³ = F cos(Ωt)',
@@ -1184,6 +1255,9 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   private waveCurrent = new Float32Array(this.fieldWidth * this.fieldHeight);
   private wavePrevious = new Float32Array(this.fieldWidth * this.fieldHeight);
   private waveNext = new Float32Array(this.fieldWidth * this.fieldHeight);
+  private readonly fluid = new D2Q9Fluid(176, 88);
+  private fluidDiagnostics: FluidDiagnostics = this.fluid.diagnostics;
+  private fluidTracers: FluidTracer[] = [];
   private readonly quantumPoints = 256;
   private readonly quantumMinimum = -10;
   private readonly quantumMaximum = 10;
@@ -1396,6 +1470,10 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
         'duffingDamping',
         'duffingDrive',
         'duffingFrequency',
+        'fluidReynolds',
+        'fluidInflow',
+        'fluidRadius',
+        'fluidObstacle',
       ].includes(key)
     )
       this.resetSimulation();
@@ -1405,6 +1483,9 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   }
   protected formattedControl(control: Control): string {
     const value = this.controlValue(control.key);
+    if (control.key === 'fluidObstacle') return value === 0 ? 'Cylinder' : 'Square';
+    if (control.key === 'fluidView')
+      return ['Vorticity', 'Speed', 'Pressure'][Math.round(value)] ?? 'Vorticity';
     const decimalPlaces = Math.min(4, Math.max(0, Math.ceil(-Math.log10(control.step))));
     const cleanValue = value.toFixed(decimalPlaces);
     return `${cleanValue}${control.unit ? ` ${control.unit}` : ''}`;
@@ -1434,6 +1515,7 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     this.waveCurrent.fill(0);
     this.wavePrevious.fill(0);
     this.waveNext.fill(0);
+    this.initializeFluid();
     this.initializeQuantumState();
     if (this.selectedScenario() === 'orbit')
       this.initialInvariant = nBodyEnergy(this.orbitBodies, 1, 0);
@@ -1941,6 +2023,23 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
       }
     }
   }
+  private initializeFluid(): void {
+    const { fluidReynolds, fluidInflow, fluidRadius, fluidObstacle } = this.controls();
+    this.fluid.reset({
+      reynolds: fluidReynolds,
+      inflowVelocity: fluidInflow,
+      obstacleRadius: Math.round(fluidRadius),
+      obstacleShape: Math.round(fluidObstacle) as FluidObstacleShape,
+    });
+    this.fluidDiagnostics = this.fluid.diagnostics;
+    this.fluidTracers = Array.from({ length: 520 }, (_, index) => {
+      const x = 1 + (((index + 1) * 0.61803398875) % 1) * (this.fluid.gridWidth - 3);
+      const y = 1 + (((index + 1) * 0.41421356237) % 1) * (this.fluid.gridHeight - 3);
+      return this.fluid.isSolidAt(x, y)
+        ? { x: 1, y, age: 0 }
+        : { x, y, age: Math.round(((index * 0.754877666) % 1) * 1800) };
+    });
+  }
   private initializeQuantumState(): void {
     const { quantumMomentum, quantumPacketWidth, quantumBarrierHeight, quantumBarrierWidth } =
       this.controls();
@@ -1998,6 +2097,7 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     if (this.selectedScenario() === 'magnetic3d') this.drawMagnetic3D(context, delta);
     if (this.selectedScenario() === 'springChain') this.drawSpringChain(context, delta);
     if (this.selectedScenario() === 'duffing') this.drawDuffing(context, delta);
+    if (this.selectedScenario() === 'fluid') this.drawFluid(context, delta);
   }
   private drawAtmosphere(context: CanvasRenderingContext2D): void {
     const gradient = context.createRadialGradient(
@@ -3242,7 +3342,114 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     context.shadowBlur = 0;
   }
 
+  private drawFluid(context: CanvasRenderingContext2D, delta: number): void {
+    if (this.running()) {
+      const substeps = Math.min(8, Math.max(1, Math.round(delta * 1.6)));
+      for (let step = 0; step < substeps; step++) {
+        this.fluidDiagnostics = this.fluid.step();
+        this.advectFluidTracers();
+        if (!this.fluidDiagnostics.stable) break;
+      }
+      this.simulationTime = this.fluidDiagnostics.latticeTime;
+    }
+
+    this.ensureRasterSize(this.fluid.gridWidth, this.fluid.gridHeight);
+    if (!this.rasterCanvas || !this.rasterContext) return;
+    const image = this.rasterContext.createImageData(this.fluid.gridWidth, this.fluid.gridHeight);
+    const view = Math.round(this.controls().fluidView);
+    const inflow = this.controls().fluidInflow;
+
+    for (let cell = 0; cell < this.fluid.gridWidth * this.fluid.gridHeight; cell++) {
+      const pixel = cell * 4;
+      const solid = this.fluid.solid[cell];
+      if (solid !== 0) {
+        const body = solid === 2;
+        image.data[pixel] = body ? 224 : 18;
+        image.data[pixel + 1] = body ? 237 : 24;
+        image.data[pixel + 2] = body ? 232 : 42;
+        image.data[pixel + 3] = 255;
+        continue;
+      }
+
+      let signedValue: number;
+      if (view === 0) signedValue = this.fluid.vorticity[cell] / 0.012;
+      else if (view === 1)
+        signedValue =
+          Math.hypot(this.fluid.velocityX[cell], this.fluid.velocityY[cell]) / (1.35 * inflow);
+      else signedValue = (this.fluid.density[cell] - 1) / 0.025;
+
+      if (view === 1) {
+        const intensity = Math.max(0, Math.min(1, signedValue));
+        image.data[pixel] = 8 + intensity * 103;
+        image.data[pixel + 1] = 13 + intensity * 218;
+        image.data[pixel + 2] = 30 + intensity * 165;
+      } else {
+        const intensity = Math.min(1, Math.abs(signedValue));
+        const positive = signedValue >= 0;
+        const targetRed = positive ? 255 : 71;
+        const targetGreen = positive ? 111 : 208;
+        const targetBlue = positive ? 82 : 205;
+        image.data[pixel] = 8 + (targetRed - 8) * intensity;
+        image.data[pixel + 1] = 13 + (targetGreen - 13) * intensity;
+        image.data[pixel + 2] = 30 + (targetBlue - 30) * intensity;
+      }
+      image.data[pixel + 3] = 255;
+    }
+
+    this.rasterContext.putImageData(image, 0, 0);
+    context.imageSmoothingEnabled = true;
+    context.drawImage(this.rasterCanvas, 0, 0, this.width, this.height);
+
+    const scaleX = this.width / this.fluid.gridWidth;
+    const scaleY = this.height / this.fluid.gridHeight;
+    context.fillStyle = 'rgba(235, 255, 249, 0.52)';
+    for (const tracer of this.fluidTracers) {
+      const tracerVelocity = this.fluid.sampleVelocity(tracer.x, tracer.y);
+      const speed = Math.hypot(tracerVelocity.x, tracerVelocity.y);
+      const length = 0.8 + Math.min(2.8, (speed / Math.max(inflow, 1e-6)) * 2.1);
+      context.fillRect(tracer.x * scaleX, tracer.y * scaleY, length * scaleX, 0.32 * scaleY);
+    }
+
+    const diagnostics = this.fluidDiagnostics;
+    const strouhal = diagnostics.strouhalNumber?.toFixed(3) ?? '—';
+    this.metric.set(
+      `step = ${diagnostics.latticeTime} · Re = ${this.controls().fluidReynolds.toFixed(0)} · Ma = ${diagnostics.maximumMach.toFixed(3)} · τ = ${diagnostics.relaxationTime.toFixed(4)} · Cd = ${diagnostics.dragCoefficient.toFixed(2)} · Cl = ${diagnostics.liftCoefficient.toFixed(2)} · St = ${strouhal}${diagnostics.stable ? '' : ' · unstable'}`,
+    );
+  }
+
+  private advectFluidTracers(): void {
+    const phase = this.fluidDiagnostics.latticeTime * 0.00037;
+    for (let index = 0; index < this.fluidTracers.length; index++) {
+      const tracer = this.fluidTracers[index];
+      const velocity = this.fluid.sampleVelocity(tracer.x, tracer.y);
+      tracer.x += velocity.x;
+      tracer.y += velocity.y;
+      tracer.age++;
+      if (
+        tracer.x < 1 ||
+        tracer.x >= this.fluid.gridWidth - 2 ||
+        tracer.y < 1 ||
+        tracer.y >= this.fluid.gridHeight - 2 ||
+        tracer.age > 3600 ||
+        this.fluid.isSolidAt(tracer.x, tracer.y)
+      ) {
+        tracer.x = 1.2;
+        tracer.y = 1.5 + (((index + 1) * 0.61803398875 + phase) % 1) * (this.fluid.gridHeight - 4);
+        tracer.age = 0;
+      }
+    }
+  }
+
+  private ensureRasterSize(width: number, height: number): void {
+    if (!this.rasterCanvas) return;
+    if (this.rasterCanvas.width === width && this.rasterCanvas.height === height) return;
+    this.rasterCanvas.width = width;
+    this.rasterCanvas.height = height;
+    this.rasterContext = this.rasterCanvas.getContext('2d');
+  }
+
   private renderRaster(context: CanvasRenderingContext2D, mode: 'reaction' | 'wave'): void {
+    this.ensureRasterSize(this.fieldWidth, this.fieldHeight);
     if (!this.rasterCanvas || !this.rasterContext) return;
     const image = this.rasterContext.createImageData(this.fieldWidth, this.fieldHeight);
     for (let index = 0; index < this.fieldWidth * this.fieldHeight; index++) {

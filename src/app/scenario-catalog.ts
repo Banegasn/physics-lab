@@ -15,6 +15,7 @@ export const SCENARIO_IDS = [
   'magnetic3d',
   'springChain',
   'duffing',
+  'fluid',
 ] as const;
 
 export type Scenario = (typeof SCENARIO_IDS)[number];
@@ -252,6 +253,20 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
       'Compare hardening, softening and double-well nonlinear spring responses.',
       'Inspect transients and steady behavior in displacement and phase space.',
       'Explore bifurcation-like changes while checking timestep convergence.',
+    ],
+  },
+  {
+    id: 'fluid',
+    slug: 'vortex-street-fluid',
+    number: '17',
+    name: 'Von Kármán vortex street',
+    description: 'A two-dimensional wind tunnel with vortex shedding.',
+    seoDescription:
+      'Explore a 2D wind tunnel with D2Q9 lattice Boltzmann flow, configurable obstacles, vortex shedding and live aerodynamic diagnostics.',
+    uses: [
+      'Observe flow separation and the alternating von Kármán vortex street behind a bluff body.',
+      'Relate Reynolds number and obstacle geometry to wake structure and shedding frequency.',
+      'Compare vorticity, velocity and pressure views while monitoring drag, lift and Strouhal number.',
     ],
   },
 ];
