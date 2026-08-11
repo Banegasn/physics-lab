@@ -819,7 +819,7 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     wind3dAngle: 0,
     wind3dResolution: 1,
     wind3dView: 1,
-    wind3dParticles: 1200,
+    wind3dParticles: 1800,
   });
   protected readonly scenarios = SCENARIOS;
   protected readonly scenario = computed(() =>
@@ -1255,14 +1255,14 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
         {
           key: 'wind3dParticles',
           label: 'Tracer density',
-          min: 600,
-          max: 2200,
-          step: 600,
+          min: 800,
+          max: 3200,
+          step: 1000,
           unit: '',
           options: [
-            { value: 600, label: 'Low' },
-            { value: 1200, label: 'Medium' },
-            { value: 2200, label: 'High' },
+            { value: 800, label: 'Low' },
+            { value: 1800, label: 'Medium' },
+            { value: 3200, label: 'High' },
           ],
         },
       ];

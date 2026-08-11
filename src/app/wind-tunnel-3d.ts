@@ -67,12 +67,11 @@ export class WindTunnel3D {
     blending: THREE.AdditiveBlending,
     vertexColors: true,
     vertexShader: `
-      attribute vec3 color;
       varying vec3 vColor;
       void main() {
         vColor = color;
         vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = clamp(34.0 / max(4.0, -viewPosition.z), 2.1, 5.2);
+        gl_PointSize = clamp(72.0 / max(4.0, -viewPosition.z), 3.0, 8.0);
         gl_Position = projectionMatrix * viewPosition;
       }
     `,
@@ -82,7 +81,7 @@ export class WindTunnel3D {
         float radius = distance(gl_PointCoord, vec2(0.5));
         if (radius > 0.5) discard;
         float glow = smoothstep(0.5, 0.05, radius);
-        gl_FragColor = vec4(vColor, 0.32 + 0.68 * glow);
+        gl_FragColor = vec4(vColor * (1.0 + 0.72 * glow), 0.5 + 0.5 * glow);
       }
     `,
   });
@@ -121,7 +120,7 @@ export class WindTunnel3D {
     this.renderer.domElement.style.display = 'block';
     this.host.replaceChildren(this.renderer.domElement);
 
-    this.scene.fog = new THREE.FogExp2(0x080b18, 0.019);
+    this.scene.fog = new THREE.FogExp2(0x080b18, 0.013);
     this.camera.position.set(28, 17, 25);
     this.camera.lookAt(0, 0, 0);
     this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -178,7 +177,7 @@ export class WindTunnel3D {
     this.vorticity = new Float32Array(0);
     this.solid = new Uint8Array(0);
     this.setObstacleMesh(parameters.obstacle, parameters.angleDegrees);
-    this.createParticles(this.particleCount || 1200);
+    this.createParticles(this.particleCount || 1800);
     const triangles = parameters.obstacle === 3 ? this.customTriangles?.slice() : undefined;
     this.worker.postMessage(
       {
