@@ -628,7 +628,7 @@ const MODEL_GUIDES: Record<Scenario, ModelGuide> = {
       },
     ],
     method:
-      'A D2Q9 lattice Boltzmann BGK scheme streams nine particle populations and relaxes them toward the second-order equilibrium distribution. No-slip channel walls and the body use halfway bounce-back; the inlet is prescribed at equilibrium and the outlet uses a zero-gradient copy. A tiny one-time transverse wake perturbation breaks exact numerical symmetry, then evolves freely. Passive tracers follow the recovered velocity field. Drag and lift come from momentum exchange, while Strouhal number St = fD/U is estimated from successive positive lift crossings after the initial transient.',
+      'A D2Q9 lattice Boltzmann BGK scheme streams nine particle populations and relaxes them toward the second-order equilibrium distribution. No-slip channel walls and the body use halfway bounce-back; the inlet is prescribed at equilibrium and the outlet uses a zero-gradient copy. A tiny one-time transverse wake perturbation breaks exact numerical symmetry, then evolves freely. The white passive tracers follow the recovered velocity field; each short segment is aligned with the local velocity and lengthens with speed. Drag and lift come from momentum exchange, while Strouhal number St = fD/U is estimated from successive positive lift crossings after the initial transient.',
     limitation:
       'This 176×88 lattice is an educational low-Mach, two-dimensional laminar model. Its single-relaxation BGK collision, simple inlet/outlet boundaries, finite domain and coarse obstacle resolution are not sufficient for engineering CFD, turbulent wakes or quantitative validation. Compare trends only after the startup transient and while τ remains safely above 0.5.',
     reference: {
@@ -3402,13 +3402,25 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
 
     const scaleX = this.width / this.fluid.gridWidth;
     const scaleY = this.height / this.fluid.gridHeight;
-    context.fillStyle = 'rgba(235, 255, 249, 0.52)';
+    context.save();
+    context.beginPath();
     for (const tracer of this.fluidTracers) {
       const tracerVelocity = this.fluid.sampleVelocity(tracer.x, tracer.y);
       const speed = Math.hypot(tracerVelocity.x, tracerVelocity.y);
+      if (speed < 1e-7) continue;
       const length = 0.8 + Math.min(2.8, (speed / Math.max(inflow, 1e-6)) * 2.1);
-      context.fillRect(tracer.x * scaleX, tracer.y * scaleY, length * scaleX, 0.32 * scaleY);
+      const directionX = tracerVelocity.x / speed;
+      const directionY = tracerVelocity.y / speed;
+      const headX = tracer.x * scaleX;
+      const headY = tracer.y * scaleY;
+      context.moveTo(headX - directionX * length * scaleX, headY - directionY * length * scaleY);
+      context.lineTo(headX, headY);
     }
+    context.strokeStyle = 'rgba(235, 255, 249, 0.58)';
+    context.lineWidth = Math.max(0.75, 0.3 * Math.min(scaleX, scaleY));
+    context.lineCap = 'round';
+    context.stroke();
+    context.restore();
 
     const diagnostics = this.fluidDiagnostics;
     const strouhal = diagnostics.strouhalNumber?.toFixed(3) ?? '—';
