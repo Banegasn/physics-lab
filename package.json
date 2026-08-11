@@ -6,6 +6,7 @@
     "start": "ng serve",
     "build": "ng build",
     "build:pages": "ng build --configuration production --base-href /physics-lab/ && node scripts/prepare-pages.mjs",
+    "generate:icons": "swift scripts/generate-icons.swift",
     "format": "prettier --write \"src/**/*.{ts,html,scss}\"",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
