@@ -99,6 +99,41 @@
     border-radius: 999px;
   }
 }
+@media (min-width: 901px) {
+  .workspace {
+    align-items: start;
+  }
+  .stage {
+    align-self: start;
+    height: calc(100dvh - 142px);
+  }
+  .simulation,
+  .wind-tunnel-host {
+    min-height: 0;
+  }
+  .control-rail {
+    position: sticky;
+    top: 20px;
+    align-self: start;
+    max-height: calc(100dvh - 142px);
+    padding-right: 10px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: rgba(111, 231, 195, 0.34) transparent;
+    scrollbar-width: thin;
+  }
+  .control-rail::-webkit-scrollbar {
+    width: 5px;
+  }
+  .control-rail::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .control-rail::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(111, 231, 195, 0.34);
+  }
+}
 .scenario-button {
   color: var(--muted);
   background: transparent;
