@@ -57,8 +57,38 @@ describe('SimulationPage', () => {
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelectorAll('.control-options')).toHaveLength(2);
-    expect(compiled.querySelectorAll('.control-options button')).toHaveLength(5);
+    expect(compiled.querySelectorAll('.control-list .control-options')).toHaveLength(1);
+    expect(compiled.querySelectorAll('.control-list .control-options button')).toHaveLength(2);
+    expect(compiled.querySelector('.visualization-controls')?.textContent).toContain('Field view');
+  });
+
+  it('offers visualization controls on every simulation', () => {
+    const fixture = TestBed.createComponent(SimulationPage);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.querySelector('.visualization-controls')?.textContent).toContain('Brightness');
+    expect(compiled.querySelector('.visualization-controls')?.textContent).toContain('Contrast');
+    expect(compiled.querySelector('.visualization-controls')?.textContent).toContain(
+      'Reference guides',
+    );
+    expect(compiled.querySelector('.visualization-controls')?.textContent).toContain(
+      'solver state is unchanged',
+    );
+  });
+
+  it('uses steppers instead of range sliders for discrete counts', () => {
+    const fixture = TestBed.createComponent(SimulationPage);
+    const component = fixture.componentInstance as unknown as {
+      selectedScenario: { set: (scenario: string) => void };
+    };
+    component.selectedScenario.set('springChain');
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.querySelectorAll('.numeric-stepper')).toHaveLength(2);
+    expect(compiled.querySelector('[aria-label="Mass count N"]')?.tagName).not.toBe('INPUT');
+    expect(compiled.querySelector('[aria-label="Mode index p"]')?.tagName).not.toBe('INPUT');
   });
 
   it('reveals a continuous collision-rate slider only when collisions are enabled', () => {

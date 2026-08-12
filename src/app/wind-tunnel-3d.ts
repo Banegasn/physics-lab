@@ -62,26 +62,34 @@ export class WindTunnel3D {
     emissiveIntensity: 0.55,
   });
   private readonly particleMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      pointScale: { value: 1.5 },
+      glowIntensity: { value: 1.45 },
+    },
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     vertexColors: true,
     vertexShader: `
+      uniform float pointScale;
       varying vec3 vColor;
       void main() {
         vColor = color;
         vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = clamp(72.0 / max(4.0, -viewPosition.z), 3.0, 8.0);
+        gl_PointSize = clamp((72.0 * pointScale) / max(4.0, -viewPosition.z), 3.0, 12.0);
         gl_Position = projectionMatrix * viewPosition;
       }
     `,
     fragmentShader: `
+      uniform float glowIntensity;
       varying vec3 vColor;
       void main() {
         float radius = distance(gl_PointCoord, vec2(0.5));
         if (radius > 0.5) discard;
         float glow = smoothstep(0.5, 0.05, radius);
-        gl_FragColor = vec4(vColor * (1.0 + 0.72 * glow), 0.5 + 0.5 * glow);
+        vec3 radiance = vColor * (0.9 + glowIntensity * (0.3 + 0.72 * glow));
+        float opacity = min(1.0, (0.42 + 0.5 * glow) * glowIntensity);
+        gl_FragColor = vec4(radiance, opacity);
       }
     `,
   });
@@ -105,6 +113,7 @@ export class WindTunnel3D {
   private busy = false;
   private inflowVelocity = 0.05;
   private currentView = 0;
+  private readonly guideGroup = new THREE.Group();
 
   constructor(
     private readonly host: HTMLElement,
@@ -198,8 +207,19 @@ export class WindTunnel3D {
     );
   }
 
-  frame(delta: number, running: boolean, view: number, particleCount: number): void {
+  frame(
+    delta: number,
+    running: boolean,
+    view: number,
+    particleCount: number,
+    pointScale: number,
+    glowIntensity: number,
+    showGuides: boolean,
+  ): void {
     this.currentView = Math.round(view);
+    this.particleMaterial.uniforms['pointScale'].value = pointScale;
+    this.particleMaterial.uniforms['glowIntensity'].value = glowIntensity;
+    this.guideGroup.visible = showGuides;
     if (particleCount !== this.particleCount) this.createParticles(particleCount);
     if (running && this.velocityX.length > 0) {
       this.advanceParticles(delta);
@@ -269,20 +289,21 @@ export class WindTunnel3D {
   }
 
   private addTunnelGeometry(): void {
+    this.scene.add(this.guideGroup);
     const tunnel = new THREE.BoxGeometry(27, WORLD_HEIGHT, WORLD_DEPTH);
     const edges = new THREE.EdgesGeometry(tunnel);
     const wireframe = new THREE.LineSegments(
       edges,
       new THREE.LineBasicMaterial({ color: 0x6fe7c3, transparent: true, opacity: 0.17 }),
     );
-    this.scene.add(wireframe);
+    this.guideGroup.add(wireframe);
     tunnel.dispose();
 
     const floor = new THREE.GridHelper(27, 18, 0x426e73, 0x24313f);
     floor.position.y = -WORLD_HEIGHT / 2;
     floor.material.transparent = true;
     floor.material.opacity = 0.24;
-    this.scene.add(floor);
+    this.guideGroup.add(floor);
 
     const inletGeometry = new THREE.RingGeometry(5.1, 5.18, 64);
     const inlet = new THREE.Mesh(
@@ -291,7 +312,7 @@ export class WindTunnel3D {
     );
     inlet.rotation.y = Math.PI / 2;
     inlet.position.x = -13.48;
-    this.scene.add(inlet);
+    this.guideGroup.add(inlet);
   }
 
   private setObstacleMesh(obstacle: number, angleDegrees: number): void {

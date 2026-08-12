@@ -146,7 +146,11 @@ type ControlKey =
   | 'wind3dAngle'
   | 'wind3dResolution'
   | 'wind3dView'
-  | 'wind3dParticles';
+  | 'wind3dParticles'
+  | 'wind3dPointSize'
+  | 'wind3dGlow';
+
+type VisualizationKey = 'brightness' | 'contrast' | 'guides';
 
 interface Control {
   key: ControlKey;
@@ -157,6 +161,25 @@ interface Control {
   unit: string;
   options?: readonly { value: number; label: string }[];
 }
+
+interface VisualizationControl {
+  key: VisualizationKey;
+  label: string;
+  options: readonly { value: number; label: string }[];
+}
+
+const STEPPER_CONTROLS = new Set<ControlKey>([
+  'particleCount',
+  'pendulums',
+  'baseCycles',
+  'epidemicRadius',
+  'nBodyCount',
+  'gravity3dCount',
+  'magnetic3dCount',
+  'springCount',
+  'springMode',
+  'fluidRadius',
+]);
 interface Particle extends PhaseBody {
   hue: number;
   trail: { x: number; y: number }[];
@@ -720,6 +743,46 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   protected readonly speedOptions = [0.1, 0.25, 0.5, 1, 2, 4] as const;
   protected readonly fps = signal(60);
   protected readonly metric = signal('t = 0.000');
+  protected readonly visualization = signal<Record<VisualizationKey, number>>({
+    brightness: 1,
+    contrast: 1,
+    guides: 1,
+  });
+  protected readonly visualizationControls: readonly VisualizationControl[] = [
+    {
+      key: 'brightness',
+      label: 'Brightness',
+      options: [
+        { value: 0, label: 'Dim' },
+        { value: 1, label: 'Balanced' },
+        { value: 2, label: 'Bright' },
+      ],
+    },
+    {
+      key: 'contrast',
+      label: 'Contrast',
+      options: [
+        { value: 0, label: 'Soft' },
+        { value: 1, label: 'Scientific' },
+        { value: 2, label: 'Vivid' },
+      ],
+    },
+    {
+      key: 'guides',
+      label: 'Reference guides',
+      options: [
+        { value: 0, label: 'Off' },
+        { value: 1, label: 'On' },
+      ],
+    },
+  ];
+  protected readonly visualizationFilter = computed(() => {
+    const settings = this.visualization();
+    const brightness = [0.86, 1, 1.18][settings.brightness] ?? 1;
+    const contrast = [0.9, 1.04, 1.2][settings.contrast] ?? 1.04;
+    const saturation = [0.82, 1.04, 1.24][settings.contrast] ?? 1.04;
+    return `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})`;
+  });
   protected readonly isThreeDimensional = computed(() =>
     ['lorenz3d', 'gravity3d', 'magnetic3d', 'windTunnel3d'].includes(this.selectedScenario()),
   );
@@ -820,12 +883,88 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     wind3dResolution: 1,
     wind3dView: 1,
     wind3dParticles: 1800,
+    wind3dPointSize: 1.5,
+    wind3dGlow: 1.45,
   });
   protected readonly scenarios = SCENARIOS;
   protected readonly scenario = computed(() =>
     this.scenarios.find((item) => item.id === this.selectedScenario())!,
   );
   protected readonly guide = computed(() => MODEL_GUIDES[this.selectedScenario()]);
+  protected readonly scenarioVisualizationControls = computed<Control[]>(() => {
+    if (this.selectedScenario() === 'fluid')
+      return [
+        {
+          key: 'fluidView',
+          label: 'Field view',
+          min: 0,
+          max: 2,
+          step: 1,
+          unit: '',
+          options: [
+            { value: 0, label: 'Vorticity' },
+            { value: 1, label: 'Speed' },
+            { value: 2, label: 'Pressure' },
+          ],
+        },
+      ];
+    if (this.selectedScenario() === 'windTunnel3d')
+      return [
+        {
+          key: 'wind3dView',
+          label: 'Tracer color',
+          min: 0,
+          max: 2,
+          step: 1,
+          unit: '',
+          options: [
+            { value: 0, label: 'Uniform' },
+            { value: 1, label: 'Speed' },
+            { value: 2, label: 'Vorticity' },
+          ],
+        },
+        {
+          key: 'wind3dParticles',
+          label: 'Tracer density',
+          min: 800,
+          max: 3200,
+          step: 1000,
+          unit: '',
+          options: [
+            { value: 800, label: 'Low' },
+            { value: 1800, label: 'Medium' },
+            { value: 3200, label: 'High' },
+          ],
+        },
+        {
+          key: 'wind3dPointSize',
+          label: 'Tracer size',
+          min: 0.85,
+          max: 1.5,
+          step: 0.3,
+          unit: '',
+          options: [
+            { value: 0.85, label: 'Small' },
+            { value: 1.15, label: 'Medium' },
+            { value: 1.5, label: 'Large' },
+          ],
+        },
+        {
+          key: 'wind3dGlow',
+          label: 'Tracer luminosity',
+          min: 0.85,
+          max: 1.45,
+          step: 0.3,
+          unit: '',
+          options: [
+            { value: 0.85, label: 'Soft' },
+            { value: 1.15, label: 'Bright' },
+            { value: 1.45, label: 'Maximum' },
+          ],
+        },
+      ];
+    return [];
+  });
   protected readonly activeControls = computed<Control[]>(() => {
     if (this.selectedScenario() === 'orbit')
       return [
@@ -1176,19 +1315,6 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
             { value: 1, label: 'Square' },
           ],
         },
-        {
-          key: 'fluidView',
-          label: 'Field view',
-          min: 0,
-          max: 2,
-          step: 1,
-          unit: '',
-          options: [
-            { value: 0, label: 'Vorticity' },
-            { value: 1, label: 'Speed' },
-            { value: 2, label: 'Pressure' },
-          ],
-        },
       ];
     if (this.selectedScenario() === 'windTunnel3d') {
       const obstacleOptions = [
@@ -1237,32 +1363,6 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
             { value: 0, label: '42×24×24' },
             { value: 1, label: '54×30×30' },
             { value: 2, label: '66×36×36' },
-          ],
-        },
-        {
-          key: 'wind3dView',
-          label: 'Tracer color',
-          min: 0,
-          max: 2,
-          step: 1,
-          unit: '',
-          options: [
-            { value: 0, label: 'Uniform' },
-            { value: 1, label: 'Speed' },
-            { value: 2, label: 'Vorticity' },
-          ],
-        },
-        {
-          key: 'wind3dParticles',
-          label: 'Tracer density',
-          min: 800,
-          max: 3200,
-          step: 1000,
-          unit: '',
-          options: [
-            { value: 800, label: 'Low' },
-            { value: 1800, label: 'Medium' },
-            { value: 3200, label: 'High' },
           ],
         },
       ];
@@ -1529,6 +1629,21 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
   }
   protected setSpeed(speed: number): void {
     this.speed.set(speed);
+  }
+  protected setVisualization(key: VisualizationKey, value: number): void {
+    this.visualization.update((settings) => ({ ...settings, [key]: value }));
+  }
+  protected visualizationValue(key: VisualizationKey): number {
+    return this.visualization()[key];
+  }
+  protected isStepper(control: Control): boolean {
+    return STEPPER_CONTROLS.has(control.key);
+  }
+  protected adjustControl(control: Control, direction: -1 | 1): void {
+    const value = this.controlValue(control.key) + direction * control.step;
+    const clamped = Math.max(control.min, Math.min(control.max, value));
+    const precision = Math.min(6, Math.max(0, Math.ceil(-Math.log10(control.step))));
+    this.setControlValue(control.key, Number(clamped.toFixed(precision)));
   }
   protected async loadWindModel(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
@@ -2396,6 +2511,9 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
       this.running(),
       this.controls().wind3dView,
       Math.round(this.controls().wind3dParticles),
+      this.controls().wind3dPointSize,
+      this.controls().wind3dGlow,
+      this.visualization().guides === 1,
     );
   }
   private drawAtmosphere(context: CanvasRenderingContext2D): void {
@@ -2411,6 +2529,7 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     gradient.addColorStop(1, 'rgba(7, 10, 24, 0)');
     context.fillStyle = gradient;
     context.fillRect(0, 0, this.width, this.height);
+    if (this.visualization().guides !== 1) return;
     context.strokeStyle = 'rgba(255,255,255,.035)';
     for (let x = 24; x < this.width; x += 48) {
       context.beginPath();

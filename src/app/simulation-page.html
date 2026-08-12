@@ -44,6 +44,7 @@
       <canvas
         #simCanvas
         class="simulation"
+        [style.filter]="visualizationFilter()"
         [class.stage-surface-hidden]="selectedScenario() === 'windTunnel3d'"
         [class.orbitable]="isThreeDimensional()"
         aria-label="{{ scenario().name }} simulation"
@@ -56,6 +57,7 @@
       <div
         #windTunnelHost
         class="wind-tunnel-host"
+        [style.filter]="visualizationFilter()"
         [class.active]="selectedScenario() === 'windTunnel3d'"
         role="img"
         aria-label="Interactive three-dimensional wind tunnel"
@@ -103,6 +105,26 @@
                   </button>
                 }
               </div>
+            } @else if (isStepper(control)) {
+              <div class="numeric-stepper" role="group" [attr.aria-label]="control.label">
+                <button
+                  type="button"
+                  (click)="adjustControl(control, -1)"
+                  [disabled]="controlValue(control.key) <= control.min"
+                  [attr.aria-label]="'Decrease ' + control.label"
+                >
+                  −
+                </button>
+                <span>{{ formattedControl(control) }}</span>
+                <button
+                  type="button"
+                  (click)="adjustControl(control, 1)"
+                  [disabled]="controlValue(control.key) >= control.max"
+                  [attr.aria-label]="'Increase ' + control.label"
+                >
+                  +
+                </button>
+              </div>
             } @else {
               <input
                 type="range"
@@ -114,6 +136,44 @@
                 (input)="updateControl(control.key, $event)"
               />
             }
+          </div>
+        }
+      </div>
+      <div class="visualization-controls">
+        <div class="visualization-heading">
+          <span class="eyebrow">Visualization</span>
+          <small>Display only · solver state is unchanged</small>
+        </div>
+        @for (control of visualizationControls; track control.key) {
+          <div class="visualization-control">
+            <span>{{ control.label }}</span>
+            <div class="control-options" role="group" [attr.aria-label]="control.label">
+              @for (option of control.options; track option.value) {
+                <button
+                  type="button"
+                  [class.active]="visualizationValue(control.key) === option.value"
+                  (click)="setVisualization(control.key, option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              }
+            </div>
+          </div>
+        }
+        @for (control of scenarioVisualizationControls(); track control.key) {
+          <div class="visualization-control">
+            <span>{{ control.label }}</span>
+            <div class="control-options" role="group" [attr.aria-label]="control.label">
+              @for (option of control.options; track option.value) {
+                <button
+                  type="button"
+                  [class.active]="controlValue(control.key) === option.value"
+                  (click)="setControlValue(control.key, option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              }
+            </div>
           </div>
         }
       </div>

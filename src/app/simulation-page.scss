@@ -178,6 +178,7 @@
   border-radius: 16px;
   background: radial-gradient(circle at 50% 45%, #171b3a, #090c1b 72%);
   touch-action: none;
+  transition: filter 180ms ease;
 }
 .simulation.orbitable {
   cursor: grab;
@@ -199,6 +200,7 @@
   background: #080b18;
   touch-action: none;
   cursor: grab;
+  transition: filter 180ms ease;
 }
 .wind-tunnel-host.active {
   display: block;
@@ -318,6 +320,64 @@ input[type='range']::-webkit-slider-thumb {
   color: var(--ink);
   border-color: var(--mint);
   background: var(--mint);
+}
+.numeric-stepper {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  gap: 6px;
+}
+.numeric-stepper button {
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mint);
+  font-size: 17px;
+  cursor: pointer;
+}
+.numeric-stepper button:hover:not(:disabled) {
+  border-color: rgba(111, 231, 195, 0.55);
+  background: rgba(111, 231, 195, 0.08);
+}
+.numeric-stepper button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.35;
+}
+.numeric-stepper span {
+  display: grid;
+  place-items: center;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.025);
+  font:
+    11px ui-monospace,
+    monospace;
+}
+.visualization-controls {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.visualization-control {
+  display: grid;
+  gap: 8px;
+}
+.visualization-heading small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.35;
+}
+.visualization-control > span {
+  color: #d9e0ea;
+  font-size: 11px;
 }
 .model-upload {
   margin-top: 25px;
