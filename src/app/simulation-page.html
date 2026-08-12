@@ -225,7 +225,7 @@
         <p>{{ guide().overview }}</p>
         <h3>What this simulator is useful for</h3>
         <ul class="guide-uses">
-          @for (use of scenario().uses; track use) {
+          @for (use of scenario().uses; track $index) {
             <li>{{ use }}</li>
           }
         </ul>
