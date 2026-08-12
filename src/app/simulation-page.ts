@@ -148,7 +148,9 @@ type ControlKey =
   | 'wind3dView'
   | 'wind3dParticles'
   | 'wind3dPointSize'
-  | 'wind3dGlow';
+  | 'wind3dGlow'
+  | 'wind3dRepresentation'
+  | 'wind3dSliceOpacity';
 
 type VisualizationKey = 'brightness' | 'contrast' | 'guides';
 
@@ -701,8 +703,9 @@ const MODEL_GUIDES: Record<Scenario, ModelGuide> = {
           'D3Q19 lattice resolution. More cells improve surface representation but increase memory and runtime.',
       },
       {
-        name: 'View',
-        meaning: 'Tracer color encodes no scalar, local speed magnitude or vorticity magnitude.',
+        name: 'Display',
+        meaning:
+          'Passive tracers or two central field slices. Slice color encodes local speed magnitude or vorticity magnitude; animated bands indicate downstream direction.',
       },
       {
         name: 'Cd / Cl',
@@ -711,7 +714,7 @@ const MODEL_GUIDES: Record<Scenario, ModelGuide> = {
       },
     ],
     method:
-      'A Web Worker advances a D3Q19 single-relaxation-time lattice Boltzmann scheme. Halfway bounce-back imposes no slip on the tunnel and object voxels; an equilibrium inlet and copied zero-gradient outlet drive the flow. Imported GLB, self-contained GLTF, OBJ and STL triangles are centered, scaled, surface-voxelized and flood-filled before solving. Three.js renders the solid and passive point tracers without changing the fluid state.',
+      'A Web Worker advances a D3Q19 single-relaxation-time lattice Boltzmann scheme. Halfway bounce-back imposes no slip on the tunnel and object voxels; an equilibrium inlet and copied zero-gradient outlet drive the flow. Imported GLB, self-contained GLTF, OBJ and STL triangles are centered, scaled, surface-voxelized and flood-filled before solving. Three.js renders the solid, passive point tracers or orthogonal mid-plane samples without changing the fluid state. Slice color is computed from the solved lattice field; the moving bands are a qualitative direction cue rather than another solved variable.',
     limitation:
       'This is low-resolution educational CFD. Coarse stair-step geometry, BGK collision, simple open boundaries, finite blockage and short averaging windows limit quantitative Cd and Cl accuracy. Imported meshes should be closed and manifold; thin features below roughly one lattice cell disappear. Validate important results with mesh refinement, a larger domain and experimental or engineering-grade CFD data.',
     reference: {
@@ -782,6 +785,20 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     const contrast = [0.9, 1.04, 1.2][settings.contrast] ?? 1.04;
     const saturation = [0.82, 1.04, 1.24][settings.contrast] ?? 1.04;
     return `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})`;
+  });
+  protected readonly windFieldLegend = computed(() => {
+    if (this.controls().wind3dRepresentation === 1) {
+      return {
+        label: 'Speed magnitude |u|',
+        range: `0 → ${(this.controls().wind3dInflow * 1.7).toFixed(3)} lu/ts`,
+        className: 'speed',
+      };
+    }
+    return {
+      label: 'Vorticity magnitude |ω|',
+      range: '0 → 0.035 ts⁻¹',
+      className: 'vorticity',
+    };
   });
   protected readonly isThreeDimensional = computed(() =>
     ['lorenz3d', 'gravity3d', 'magnetic3d', 'windTunnel3d'].includes(this.selectedScenario()),
@@ -885,6 +902,8 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     wind3dParticles: 1800,
     wind3dPointSize: 1.5,
     wind3dGlow: 1.45,
+    wind3dRepresentation: 0,
+    wind3dSliceOpacity: 0.62,
   });
   protected readonly scenarios = SCENARIOS;
   protected readonly scenario = computed(() =>
@@ -911,57 +930,88 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
     if (this.selectedScenario() === 'windTunnel3d')
       return [
         {
-          key: 'wind3dView',
-          label: 'Tracer color',
+          key: 'wind3dRepresentation',
+          label: 'Flow display',
           min: 0,
           max: 2,
           step: 1,
           unit: '',
           options: [
-            { value: 0, label: 'Uniform' },
-            { value: 1, label: 'Speed' },
-            { value: 2, label: 'Vorticity' },
+            { value: 0, label: 'Tracers' },
+            { value: 1, label: 'Speed slices' },
+            { value: 2, label: 'Vorticity slices' },
           ],
         },
-        {
-          key: 'wind3dParticles',
-          label: 'Tracer density',
-          min: 800,
-          max: 3200,
-          step: 1000,
-          unit: '',
-          options: [
-            { value: 800, label: 'Low' },
-            { value: 1800, label: 'Medium' },
-            { value: 3200, label: 'High' },
-          ],
-        },
-        {
-          key: 'wind3dPointSize',
-          label: 'Tracer size',
-          min: 0.85,
-          max: 1.5,
-          step: 0.3,
-          unit: '',
-          options: [
-            { value: 0.85, label: 'Small' },
-            { value: 1.15, label: 'Medium' },
-            { value: 1.5, label: 'Large' },
-          ],
-        },
-        {
-          key: 'wind3dGlow',
-          label: 'Tracer luminosity',
-          min: 0.85,
-          max: 1.45,
-          step: 0.3,
-          unit: '',
-          options: [
-            { value: 0.85, label: 'Soft' },
-            { value: 1.15, label: 'Bright' },
-            { value: 1.45, label: 'Maximum' },
-          ],
-        },
+        ...(this.controls().wind3dRepresentation === 0
+          ? [
+              {
+                key: 'wind3dView' as const,
+                label: 'Tracer color',
+                min: 0,
+                max: 2,
+                step: 1,
+                unit: '',
+                options: [
+                  { value: 0, label: 'Uniform' },
+                  { value: 1, label: 'Speed' },
+                  { value: 2, label: 'Vorticity' },
+                ],
+              },
+              {
+                key: 'wind3dParticles' as const,
+                label: 'Tracer density',
+                min: 800,
+                max: 3200,
+                step: 1000,
+                unit: '',
+                options: [
+                  { value: 800, label: 'Low' },
+                  { value: 1800, label: 'Medium' },
+                  { value: 3200, label: 'High' },
+                ],
+              },
+              {
+                key: 'wind3dPointSize' as const,
+                label: 'Tracer size',
+                min: 0.85,
+                max: 1.5,
+                step: 0.3,
+                unit: '',
+                options: [
+                  { value: 0.85, label: 'Small' },
+                  { value: 1.15, label: 'Medium' },
+                  { value: 1.5, label: 'Large' },
+                ],
+              },
+              {
+                key: 'wind3dGlow' as const,
+                label: 'Tracer luminosity',
+                min: 0.85,
+                max: 1.45,
+                step: 0.3,
+                unit: '',
+                options: [
+                  { value: 0.85, label: 'Soft' },
+                  { value: 1.15, label: 'Bright' },
+                  { value: 1.45, label: 'Maximum' },
+                ],
+              },
+            ]
+          : [
+              {
+                key: 'wind3dSliceOpacity' as const,
+                label: 'Field opacity',
+                min: 0.36,
+                max: 0.82,
+                step: 0.2,
+                unit: '',
+                options: [
+                  { value: 0.36, label: 'Soft' },
+                  { value: 0.62, label: 'Balanced' },
+                  { value: 0.82, label: 'Strong' },
+                ],
+              },
+            ]),
       ];
     return [];
   });
@@ -2514,6 +2564,8 @@ export class SimulationPage implements AfterViewInit, OnDestroy {
       this.controls().wind3dPointSize,
       this.controls().wind3dGlow,
       this.visualization().guides === 1,
+      Math.round(this.controls().wind3dRepresentation),
+      this.controls().wind3dSliceOpacity,
     );
   }
   private drawAtmosphere(context: CanvasRenderingContext2D): void {

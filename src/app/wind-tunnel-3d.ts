@@ -93,6 +93,12 @@ export class WindTunnel3D {
       }
     `,
   });
+  private readonly sliceGroup = new THREE.Group();
+  private readonly sliceMaterials: [THREE.ShaderMaterial, THREE.ShaderMaterial];
+  private readonly sliceTextures: [THREE.DataTexture | null, THREE.DataTexture | null] = [
+    null,
+    null,
+  ];
   private obstacleMesh: THREE.Object3D | null = null;
   private customGeometry: THREE.BufferGeometry | null = null;
   private customTriangles: Float32Array | null = null;
@@ -113,6 +119,8 @@ export class WindTunnel3D {
   private busy = false;
   private inflowVelocity = 0.05;
   private currentView = 0;
+  private currentRepresentation = 0;
+  private sliceTime = 0;
   private readonly guideGroup = new THREE.Group();
 
   constructor(
@@ -147,6 +155,21 @@ export class WindTunnel3D {
     rimLight.position.set(12, -4, -9);
     this.scene.add(rimLight);
     this.addTunnelGeometry();
+    this.sliceMaterials = [this.createSliceMaterial(), this.createSliceMaterial()];
+    const verticalSlice = new THREE.Mesh(
+      new THREE.PlaneGeometry(27, WORLD_HEIGHT),
+      this.sliceMaterials[0],
+    );
+    const horizontalSlice = new THREE.Mesh(
+      new THREE.PlaneGeometry(27, WORLD_DEPTH),
+      this.sliceMaterials[1],
+    );
+    verticalSlice.renderOrder = 1;
+    horizontalSlice.renderOrder = 1;
+    horizontalSlice.rotation.x = -Math.PI / 2;
+    this.sliceGroup.add(verticalSlice, horizontalSlice);
+    this.sliceGroup.visible = false;
+    this.scene.add(this.sliceGroup);
 
     const pointGeometry = new THREE.BufferGeometry();
     this.points = new THREE.Points(pointGeometry, this.particleMaterial);
@@ -163,6 +186,7 @@ export class WindTunnel3D {
       this.velocityZ = data.velocityZ;
       this.vorticity = data.vorticity;
       if (data.solid) this.solid = data.solid;
+      this.updateSliceFields();
       const status = data.diagnostics.stable ? '' : ' · unstable';
       this.reportMetric(
         `step = ${data.diagnostics.latticeTime} · grid = ${data.width}×${data.height}×${data.depth} · Ma = ${data.diagnostics.maximumMach.toFixed(3)} · τ = ${data.diagnostics.relaxationTime.toFixed(4)} · Cd = ${data.diagnostics.dragCoefficient.toFixed(2)} · Cl = ${data.diagnostics.liftCoefficient.toFixed(2)}${status}`,
@@ -215,11 +239,25 @@ export class WindTunnel3D {
     pointScale: number,
     glowIntensity: number,
     showGuides: boolean,
+    representation: number,
+    sliceOpacity: number,
   ): void {
     this.currentView = Math.round(view);
+    const nextRepresentation = Math.max(0, Math.min(2, Math.round(representation)));
+    if (nextRepresentation !== this.currentRepresentation) {
+      this.currentRepresentation = nextRepresentation;
+      this.updateSliceFields();
+    }
     this.particleMaterial.uniforms['pointScale'].value = pointScale;
     this.particleMaterial.uniforms['glowIntensity'].value = glowIntensity;
     this.guideGroup.visible = showGuides;
+    this.points.visible = this.currentRepresentation === 0;
+    this.sliceGroup.visible = this.currentRepresentation !== 0 && this.velocityX.length > 0;
+    if (running) this.sliceTime += Math.max(0, delta) * 0.045;
+    for (const material of this.sliceMaterials) {
+      material.uniforms['time'].value = this.sliceTime;
+      material.uniforms['opacity'].value = sliceOpacity;
+    }
     if (particleCount !== this.particleCount) this.createParticles(particleCount);
     if (running && this.velocityX.length > 0) {
       this.advanceParticles(delta);
@@ -283,6 +321,7 @@ export class WindTunnel3D {
     });
     this.points.geometry.dispose();
     this.particleMaterial.dispose();
+    this.sliceTextures.forEach((texture) => texture?.dispose());
     this.customGeometry?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -313,6 +352,117 @@ export class WindTunnel3D {
     inlet.rotation.y = Math.PI / 2;
     inlet.position.x = -13.48;
     this.guideGroup.add(inlet);
+  }
+
+  private createSliceMaterial(): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        fieldMap: { value: null },
+        opacity: { value: 0.62 },
+        time: { value: 0 },
+      },
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D fieldMap;
+        uniform float opacity;
+        uniform float time;
+        varying vec2 vUv;
+        void main() {
+          vec4 field = texture2D(fieldMap, vUv);
+          if (field.a < 0.01) discard;
+          float phase = 0.5 + 0.5 * sin((vUv.x * 10.0 - time * 1.35) * 6.2831853);
+          float pulse = 0.86 + 0.14 * smoothstep(0.16, 0.9, phase);
+          gl_FragColor = vec4(field.rgb * (0.9 + 0.16 * pulse), field.a * opacity * pulse);
+        }
+      `,
+    });
+  }
+
+  private updateSliceFields(): void {
+    if (this.velocityX.length === 0 || this.currentRepresentation === 0) return;
+    this.updateSliceTexture(0, this.width, this.height, 'vertical');
+    this.updateSliceTexture(1, this.width, this.depth, 'horizontal');
+  }
+
+  private updateSliceTexture(
+    textureIndex: 0 | 1,
+    textureWidth: number,
+    textureHeight: number,
+    orientation: 'vertical' | 'horizontal',
+  ): void {
+    let texture = this.sliceTextures[textureIndex];
+    const image = texture?.image as { data: Uint8Array; width: number; height: number } | undefined;
+    if (!texture || image?.width !== textureWidth || image.height !== textureHeight) {
+      texture?.dispose();
+      texture = new THREE.DataTexture(
+        new Uint8Array(textureWidth * textureHeight * 4),
+        textureWidth,
+        textureHeight,
+        THREE.RGBAFormat,
+      );
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.wrapS = THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      this.sliceTextures[textureIndex] = texture;
+      this.sliceMaterials[textureIndex].uniforms['fieldMap'].value = texture;
+    }
+    const pixels = (texture.image as { data: Uint8Array }).data;
+    const centralY = Math.floor(this.height / 2);
+    const centralZ = Math.floor(this.depth / 2);
+    const scalarScale =
+      this.currentRepresentation === 1 ? Math.max(this.inflowVelocity * 1.7, 1e-6) : 0.035;
+    for (let row = 0; row < textureHeight; row++) {
+      for (let x = 0; x < textureWidth; x++) {
+        const y = orientation === 'vertical' ? row : centralY;
+        const z = orientation === 'vertical' ? centralZ : row;
+        const cell = (z * this.height + y) * this.width + x;
+        const pixel = (row * textureWidth + x) * 4;
+        if (this.solid[cell] !== 0) {
+          pixels[pixel + 3] = 0;
+          continue;
+        }
+        const scalar =
+          this.currentRepresentation === 1
+            ? Math.hypot(
+                this.velocityX[cell] ?? 0,
+                this.velocityY[cell] ?? 0,
+                this.velocityZ[cell] ?? 0,
+              )
+            : (this.vorticity[cell] ?? 0);
+        const normalized = Math.max(0, Math.min(1, scalar / scalarScale));
+        const color = this.fieldColor(normalized, this.currentRepresentation === 2);
+        pixels[pixel] = color[0];
+        pixels[pixel + 1] = color[1];
+        pixels[pixel + 2] = color[2];
+        pixels[pixel + 3] = Math.round(28 + normalized * 205);
+      }
+    }
+    texture.needsUpdate = true;
+  }
+
+  private fieldColor(normalized: number, vorticity: boolean): [number, number, number] {
+    if (vorticity) {
+      return [
+        Math.round(58 + 197 * normalized),
+        Math.round(105 + 112 * (1 - Math.abs(normalized - 0.52) * 1.7)),
+        Math.round(224 - 158 * normalized),
+      ];
+    }
+    return [
+      Math.round(28 + 223 * normalized),
+      Math.round(92 + 137 * (1 - Math.abs(normalized - 0.58) * 1.45)),
+      Math.round(240 - 172 * normalized),
+    ];
   }
 
   private setObstacleMesh(obstacle: number, angleDegrees: number): void {

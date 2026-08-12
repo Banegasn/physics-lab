@@ -176,6 +176,16 @@
             </div>
           </div>
         }
+        @if (selectedScenario() === 'windTunnel3d' && controls().wind3dRepresentation !== 0) {
+          <div class="field-scale">
+            <span
+              ><strong>{{ windFieldLegend().label }}</strong
+              ><small>{{ windFieldLegend().range }}</small></span
+            >
+            <i [class]="windFieldLegend().className" aria-hidden="true"></i>
+            <span class="field-scale-extents"><small>Low</small><small>High</small></span>
+          </div>
+        }
       </div>
       @if (selectedScenario() === 'windTunnel3d') {
         <div class="model-upload">

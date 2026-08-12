@@ -91,6 +91,30 @@ describe('SimulationPage', () => {
     expect(compiled.querySelector('[aria-label="Mode index p"]')?.tagName).not.toBe('INPUT');
   });
 
+  it('switches the wind tunnel from tracers to field slices', () => {
+    const fixture = TestBed.createComponent(SimulationPage);
+    const component = fixture.componentInstance as unknown as {
+      selectedScenario: { set: (scenario: string) => void };
+    };
+    component.selectedScenario.set('windTunnel3d');
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.querySelector('[aria-label="Flow display"]')).toBeTruthy();
+    expect(compiled.textContent).toContain('Tracer luminosity');
+
+    const speedSlices = [...compiled.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'Speed slices',
+    );
+    speedSlices?.click();
+    fixture.detectChanges();
+
+    expect(compiled.textContent).toContain('Field opacity');
+    expect(compiled.textContent).toContain('Speed magnitude |u|');
+    expect(compiled.textContent).toContain('0 → 0.085 lu/ts');
+    expect(compiled.textContent).not.toContain('Tracer luminosity');
+  });
+
   it('reveals a continuous collision-rate slider only when collisions are enabled', () => {
     const fixture = TestBed.createComponent(SimulationPage);
     const component = fixture.componentInstance as unknown as {

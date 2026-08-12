@@ -414,6 +414,43 @@ input[type='range']::-webkit-slider-thumb {
   color: #d9e0ea;
   font-size: 11px;
 }
+.field-scale {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.field-scale > span:first-child,
+.field-scale-extents {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.field-scale strong {
+  color: #d9e0ea;
+  font-size: 9px;
+  font-weight: 600;
+}
+.field-scale small {
+  color: var(--muted);
+  font:
+    8px ui-monospace,
+    monospace;
+}
+.field-scale i {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+}
+.field-scale i.speed {
+  background: linear-gradient(90deg, #1c5cf0, #5bdfc4, #fbd34f, #fb4d44);
+}
+.field-scale i.vorticity {
+  background: linear-gradient(90deg, #3a69e0, #69dbc2, #e6d349, #ff3b42);
+}
 .model-upload {
   margin-top: 25px;
   padding-top: 20px;
